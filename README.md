@@ -53,7 +53,7 @@ graph TD
 - **🔄 Adaptive Graph Construction**: Dynamically builds and refines thought networks in real-time
 - **🧩 Multi-Stage Reasoning Pipeline**: 8-stage sophisticated processing pipeline for complex problem-solving
 - **🎯 Intelligent Hypothesis Generation**: AI-driven hypothesis creation with evidence-based validation
-- **🔍 Advanced Evidence Synthesis**: Integrates multiple evidence sources for robust conclusions
+- **🔍 Advanced Evidence Synthesis**: Real API integrations with PubMed, Google Scholar, and Exa Search for live research data
 
 ### 🛡️ **Enterprise-Grade Reliability**
 - **💾 Smart Checkpointing**: Advanced state management with rollback capabilities
@@ -178,6 +178,26 @@ const config = {
   }
 };
 ```
+
+### 🌐 **External API Integration**
+
+For real evidence gathering from external sources:
+
+```bash
+# Configure in .env file
+EXA_API_KEY=your-exa-api-key                 # Neural search engine
+PUBMED_API_KEY=your-ncbi-api-key             # Biomedical literature  
+GOOGLE_SCHOLAR_API_KEY=your-serpapi-key      # Academic papers
+```
+
+> 📖 **See [API Integration Guide](docs/API_INTEGRATION.md) for detailed setup instructions**
+
+**Supported APIs:**
+- **PubMed** (NCBI E-utilities) - Free biomedical literature access
+- **Google Scholar** (via SerpAPI) - Academic papers across disciplines  
+- **Exa Search** - Neural web search for research content
+
+*Works with mock data when APIs not configured - perfect for development!*
 
 ---
 

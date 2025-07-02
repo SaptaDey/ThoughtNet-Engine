@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import winston from 'winston';
 import { settings } from '../../config';
 import { GoTProcessorSessionData } from '../models/commonTypes';
-import { Node, NodeMetadata, NodeType, Edge, EdgeMetadata, EdgeType, FalsificationCriteriaSchema, BiasFlagSchema, PlanSchema } from '../models/graphElements';
+import { Node, NodeMetadata, NodeType, Edge, EdgeMetadata, EdgeType, FalsificationCriteriaSchema, BiasFlagSchema, PlanSchema, createNode } from '../models/graphElements';
 import { ConfidenceVectorSchema, EpistemicStatus } from '../models/common';
 import { BaseStage, StageOutput } from './baseStage';
 import { executeQuery, Neo4jError } from '../../infrastructure/neo4jUtils';
@@ -141,7 +141,11 @@ export class HypothesisStage extends BaseStage {
 
         const dimProps = dimRecords[0].props;
         const dimensionLabelForHypo = dimProps.label || "Unknown Dimension";
-        const dimensionTagsForHypo = new Set(dimProps.metadata_disciplinary_tags || []);
+        const dimensionTagsForHypo = new Set<string>(
+          Array.isArray(dimProps.metadata_disciplinary_tags) 
+            ? dimProps.metadata_disciplinary_tags 
+            : (dimProps.metadata_disciplinary_tags || '').split(',').filter(Boolean)
+        );
         const dimensionLayerForHypo = dimProps.metadata_layer_id || this.settings.asr_got.default_parameters?.initial_layer || "0";
 
         const kHypothesesToGenerate = Math.floor(Math.random() * (kMax - kMin + 1)) + kMin;
@@ -158,13 +162,12 @@ export class HypothesisStage extends BaseStage {
 
           const hypoMetadata: NodeMetadata = {
             description: `A hypothesis related to dimension: '${dimensionLabelForHypo}'.`,
+            query_context: currentSessionData.query || '',
             source_description: "HypothesisStage (P1.3)",
             epistemic_status: EpistemicStatus.HYPOTHESIS,
             disciplinary_tags: hypoContent.disciplinary_tags.join(','),
-            falsification_criteria: hypoContent.falsification_criteria,
-            bias_flags: hypoContent.bias_flags,
             impact_score: hypoContent.impact_score,
-            plan: hypoContent.plan,
+            is_knowledge_gap: false,
             layer_id: operationalParams.hypothesis_layer || dimensionLayerForHypo,
             id: uuidv4(), // Will be overwritten by Node constructor
             doi: '',
@@ -175,7 +178,7 @@ export class HypothesisStage extends BaseStage {
             updated_at: new Date(),
           };
 
-          const hypothesisNode: Node = {
+          const hypothesisNode: Node = createNode({
             id: hypoIdNeo4j,
             label: hypoContent.label,
             type: NodeType.HYPOTHESIS,
@@ -186,10 +189,7 @@ export class HypothesisStage extends BaseStage {
               consensus_alignment: this.hypothesisConfidenceValues[3],
             }),
             metadata: hypoMetadata,
-            created_at: new Date(),
-            updated_at: new Date(),
-            updateConfidence: () => {}, // Placeholder
-          };
+          });
 
           const hypPropsForNeo4j = prepareNodePropertiesForNeo4j(hypothesisNode);
 

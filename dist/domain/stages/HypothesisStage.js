@@ -121,7 +121,9 @@ class HypothesisStage extends baseStage_1.BaseStage {
                     }
                     const dimProps = dimRecords[0].props;
                     const dimensionLabelForHypo = dimProps.label || "Unknown Dimension";
-                    const dimensionTagsForHypo = new Set(dimProps.metadata_disciplinary_tags || []);
+                    const dimensionTagsForHypo = new Set(Array.isArray(dimProps.metadata_disciplinary_tags)
+                        ? dimProps.metadata_disciplinary_tags
+                        : (dimProps.metadata_disciplinary_tags || '').split(',').filter(Boolean));
                     const dimensionLayerForHypo = dimProps.metadata_layer_id || ((_a = this.settings.asr_got.default_parameters) === null || _a === void 0 ? void 0 : _a.initial_layer) || "0";
                     const kHypothesesToGenerate = Math.floor(Math.random() * (kMax - kMin + 1)) + kMin;
                     logger.debug(`Preparing ${kHypothesesToGenerate} hypotheses for dimension: '${dimensionLabelForHypo}' (ID: ${dimId})`);
@@ -130,13 +132,12 @@ class HypothesisStage extends baseStage_1.BaseStage {
                         const hypoIdNeo4j = `hypo_${dimId}_${currentSessionData.session_id}_${i}_${(0, uuid_1.v4)()}`;
                         const hypoMetadata = {
                             description: `A hypothesis related to dimension: '${dimensionLabelForHypo}'.`,
+                            query_context: currentSessionData.query || '',
                             source_description: "HypothesisStage (P1.3)",
                             epistemic_status: common_1.EpistemicStatus.HYPOTHESIS,
                             disciplinary_tags: hypoContent.disciplinary_tags.join(','),
-                            falsification_criteria: hypoContent.falsification_criteria,
-                            bias_flags: hypoContent.bias_flags,
                             impact_score: hypoContent.impact_score,
-                            plan: hypoContent.plan,
+                            is_knowledge_gap: false,
                             layer_id: operationalParams.hypothesis_layer || dimensionLayerForHypo,
                             id: (0, uuid_1.v4)(), // Will be overwritten by Node constructor
                             doi: '',
@@ -146,7 +147,7 @@ class HypothesisStage extends baseStage_1.BaseStage {
                             created_at: new Date(),
                             updated_at: new Date(),
                         };
-                        const hypothesisNode = {
+                        const hypothesisNode = (0, graphElements_1.createNode)({
                             id: hypoIdNeo4j,
                             label: hypoContent.label,
                             type: graphElements_1.NodeType.HYPOTHESIS,
@@ -157,10 +158,7 @@ class HypothesisStage extends baseStage_1.BaseStage {
                                 consensus_alignment: this.hypothesisConfidenceValues[3],
                             }),
                             metadata: hypoMetadata,
-                            created_at: new Date(),
-                            updated_at: new Date(),
-                            updateConfidence: () => { }, // Placeholder
-                        };
+                        });
                         const hypPropsForNeo4j = (0, neo4jHelpers_1.prepareNodePropertiesForNeo4j)(hypothesisNode);
                         batchHypothesisNodeData.push({
                             props: hypPropsForNeo4j,

@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import winston from 'winston';
 import { settings } from '../../config';
 import { GoTProcessorSessionData } from '../models/commonTypes';
-import { Node, NodeMetadata, NodeType, Edge, EdgeMetadata, EdgeType, StatisticalPowerSchema } from '../models/graphElements';
+import { Node, NodeMetadata, NodeType, Edge, EdgeMetadata, EdgeType, StatisticalPowerSchema, createNode } from '../models/graphElements';
 import { ConfidenceVectorSchema, EpistemicStatus } from '../models/common';
 import { BaseStage, StageOutput } from './baseStage';
 import { executeQuery, Neo4jError } from '../../infrastructure/neo4jUtils';
@@ -61,49 +61,41 @@ export class EvidenceStage extends BaseStage {
   private initializeApiClients(): void {
     const failures: string[] = [];
 
-    if (settings.pubmed && settings.pubmed.base_url) {
-      try {
-        this.pubmedClient = new PubMedClient(settings);
-        logger.info("PubMed client initialized for EvidenceStage.");
-      } catch (e: any) {
-        const msg = `Failed to initialize PubMedClient: ${e.message}`;
-        logger.error(msg);
-        this.executionLogs.push(msg);
-        failures.push("PubMed");
-      }
-    }
-    else {
-      logger.warn("PubMed client not initialized for EvidenceStage: PubMed configuration missing or incomplete.");
+    // Initialize PubMed client
+    try {
+      this.pubmedClient = new PubMedClient(settings);
+      logger.info("PubMed client initialized for EvidenceStage.");
+    } catch (e: any) {
+      const msg = `Failed to initialize PubMedClient: ${e.message}`;
+      logger.error(msg);
+      this.executionLogs.push(msg);
+      failures.push("PubMed");
     }
 
-    if (settings.google_scholar && settings.google_scholar.api_key && settings.google_scholar.base_url) {
-      try {
-        this.googleScholarClient = new GoogleScholarClient(settings);
-        logger.info("Google Scholar client initialized for EvidenceStage.");
-      } catch (e: any) {
-        const msg = `Failed to initialize GoogleScholarClient: ${e.message}`;
-        logger.error(msg);
-        this.executionLogs.push(msg);
-        failures.push("GoogleScholar");
-      }
-    }
-    else {
-      logger.warn("Google Scholar client not initialized for EvidenceStage: Google Scholar configuration missing or incomplete (requires api_key and base_url).");
+    // Initialize Google Scholar client
+    try {
+      this.googleScholarClient = new GoogleScholarClient(settings);
+      logger.info("Google Scholar client initialized for EvidenceStage.");
+    } catch (e: any) {
+      const msg = `Failed to initialize GoogleScholarClient: ${e.message}`;
+      logger.error(msg);
+      this.executionLogs.push(msg);
+      failures.push("GoogleScholar");
     }
 
-    if (settings.exa_search && settings.exa_search.api_key && settings.exa_search.base_url) {
-      try {
-        this.exaClient = new ExaSearchClient(settings);
-        logger.info("Exa Search client initialized for EvidenceStage.");
-      } catch (e: any) {
-        const msg = `Failed to initialize ExaSearchClient: ${e.message}`;
-        logger.error(msg);
-        this.executionLogs.push(msg);
-        failures.push("ExaSearch");
-      }
+    // Initialize Exa Search client
+    try {
+      this.exaClient = new ExaSearchClient(settings);
+      logger.info("Exa Search client initialized for EvidenceStage.");
+    } catch (e: any) {
+      const msg = `Failed to initialize ExaSearchClient: ${e.message}`;
+      logger.error(msg);
+      this.executionLogs.push(msg);
+      failures.push("ExaSearch");
     }
-    else {
-      logger.warn("Exa Search client not initialized for EvidenceStage: Exa Search configuration missing or incomplete (requires api_key and base_url).");
+
+    if (failures.length > 0) {
+      logger.warn(`Some API clients failed to initialize: ${failures.join(', ')}. Evidence collection will use available clients and mock data where needed.`);
     }
   }
 
@@ -213,7 +205,7 @@ export class EvidenceStage extends BaseStage {
       const scoreHypothesisData = (hData: Record<string, any>): number => {
         const impact = hData.impact_score || 0.1;
         const confList = hData.confidence_vector_list || [0.5, 0.5, 0.5, 0.5];
-        const confVariance = confList.reduce((sum, c) => sum + (c - 0.5) ** 2, 0) / 4.0;
+        const confVariance = confList.reduce((sum: number, c: number) => sum + (c - 0.5) ** 2, 0) / 4.0;
         return impact + confVariance;
       };
 
@@ -365,12 +357,12 @@ export class EvidenceStage extends BaseStage {
 
           const authorsListExa = result.author ? [result.author] : [];
 
-          const supportAnalysis = this._analyzeEvidenceSupport(result.title, result.text || '', hypoLabel);
+          const supportAnalysis = this._analyzeEvidenceSupport(result.title || '', result.highlights?.join(' ') || '', hypoLabel);
           const evidenceItem = {
             content: content,
             source_description: "Exa Search Result",
             url: result.url,
-            doi: undefined,
+            doi: '',
             authors_list: authorsListExa,
             publication_date_str: result.published_date,
             supports_hypothesis: supportAnalysis.supports,
@@ -422,13 +414,10 @@ export class EvidenceStage extends BaseStage {
       impact_score: (evidenceData.strength || 0.5) * spValue,
       is_knowledge_gap: false,
       id: uuidv4(), // Will be overwritten
-      doi: evidenceData.doi,
+      doi: evidenceData.doi || '',
       authors: (evidenceData.authors_list || []).join(','),
-      publication_date: evidenceData.publication_date_str,
+      publication_date: evidenceData.publication_date_str || '',
       revision_history: [],
-      plan: undefined, // Not applicable for evidence
-      falsification_criteria: undefined, // Not applicable for evidence
-      bias_flags: [], // Not applicable for evidence
       created_at: new Date(),
       updated_at: new Date(),
     };
@@ -440,16 +429,13 @@ export class EvidenceStage extends BaseStage {
       consensus_alignment: 0.5,
     });
 
-    const evidenceNode: Node = {
+    const evidenceNode: Node = createNode({
       id: evidenceId,
       label: `Evidence ${evidenceIndex + 1} for H: ${hypothesisLabel.substring(0, 20)}...`,
       type: NodeType.EVIDENCE,
       confidence: evidenceConfidenceVec,
       metadata: evidenceMetadata,
-      created_at: evidenceData.timestamp || new Date(),
-      updated_at: new Date(),
-      updateConfidence: () => {}, // Placeholder
-    };
+    });
 
     const evPropsForNeo4j = prepareNodePropertiesForNeo4j(evidenceNode);
     evPropsForNeo4j.metadata_timestamp_iso = (evidenceData.timestamp || new Date()).toISOString();
@@ -491,7 +477,7 @@ export class EvidenceStage extends BaseStage {
 
       const { query: createRelQuery, params: paramsRel } = this._buildSafeRelationshipQuery(
         createdEvidenceId,
-        hypothesis.id,
+        hypothesisId,
         edgeType,
         edgePropsForNeo4j
       );
@@ -519,14 +505,19 @@ export class EvidenceStage extends BaseStage {
     statisticalPower: any, // Should be StatisticalPower
     edgeType: EdgeType,
   ): Promise<boolean> {
-    const priorConfidenceList = priorConfidenceObj.toList();
-    const updatedConfidenceList = bayesianUpdateConfidence(priorConfidenceList, evidenceStrength, supportsHypothesis);
+    const priorConfidenceVector = {
+      empirical_support: priorConfidenceObj.empirical_support || 0.5,
+      theoretical_basis: priorConfidenceObj.theoretical_basis || 0.5,
+      methodological_rigor: priorConfidenceObj.methodological_rigor || 0.5,
+      consensus_alignment: priorConfidenceObj.consensus_alignment || 0.5,
+    };
+    const updateResult = bayesianUpdateConfidence(priorConfidenceVector, evidenceStrength, supportsHypothesis);
 
     const updatedConfidence = ConfidenceVectorSchema.parse({
-      empirical_support: updatedConfidenceList[0],
-      theoretical_basis: updatedConfidenceList[1],
-      methodological_rigor: updatedConfidenceList[2],
-      consensus_alignment: updatedConfidenceList[3],
+      empirical_support: updateResult.updatedConfidence.empirical_support,
+      theoretical_basis: updateResult.updatedConfidence.theoretical_basis,
+      methodological_rigor: updateResult.updatedConfidence.methodological_rigor,
+      consensus_alignment: updateResult.updatedConfidence.consensus_alignment,
     });
 
     const updateQuery = `
@@ -590,18 +581,15 @@ export class EvidenceStage extends BaseStage {
       impact_score: 0.6,
       is_knowledge_gap: false,
       id: uuidv4(), // Will be overwritten
-      doi: undefined,
+      doi: '',
       authors: '',
       publication_date: '',
       revision_history: [],
-      plan: undefined,
-      falsification_criteria: undefined,
-      bias_flags: [],
       created_at: new Date(),
       updated_at: new Date(),
     };
 
-    const ibnNode: Node = {
+    const ibnNode: Node = createNode({
       id: ibnId,
       label: ibnLabel,
       type: NodeType.INTERDISCIPLINARY_BRIDGE,
@@ -612,10 +600,7 @@ export class EvidenceStage extends BaseStage {
         consensus_alignment: 0.3,
       }),
       metadata: ibnMetadata,
-      created_at: new Date(),
-      updated_at: new Date(),
-      updateConfidence: () => {}, // Placeholder
-    };
+    });
 
     const ibnProps = prepareNodePropertiesForNeo4j(ibnNode);
     ibnProps.metadata_interdisciplinary_info = JSON.stringify({
@@ -737,29 +722,23 @@ export class EvidenceStage extends BaseStage {
       impact_score: 0.0,
       is_knowledge_gap: false,
       id: uuidv4(), // Will be overwritten
-      doi: undefined,
+      doi: '',
       authors: '',
       publication_date: '',
       revision_history: [],
-      plan: undefined,
-      falsification_criteria: undefined,
-      bias_flags: [],
       created_at: new Date(),
       updated_at: new Date(),
     };
     // Add misc_properties equivalent
     (hyperedgeNodeMetadata as any).misc_properties = { relationship_descriptor: "Joint Support/Contradiction (Simulated)" };
 
-    const hyperedgeCenterNode: Node = {
+    const hyperedgeCenterNode: Node = createNode({
       id: hyperedgeCenterId,
       label: `Hyperedge for ${hypothesisData.label?.substring(0, 20)}`,
       type: NodeType.HYPEREDGE_CENTER,
       confidence: hyperConfidence,
       metadata: hyperedgeNodeMetadata,
-      created_at: new Date(),
-      updated_at: new Date(),
-      updateConfidence: () => {}, // Placeholder
-    };
+    });
 
     const centerNodeProps = prepareNodePropertiesForNeo4j(hyperedgeCenterNode);
 
@@ -843,45 +822,111 @@ export class EvidenceStage extends BaseStage {
   }
 
   private _analyzeEvidenceSupport(evidenceTitle: string, evidenceAbstract: string, hypothesisLabel: string): { supports: boolean; confidence: number } {
-    // Simple heuristic-based analysis to determine if evidence supports hypothesis
+    // Robust evidence analysis to determine if evidence supports hypothesis
     const evidence = `${evidenceTitle} ${evidenceAbstract}`.toLowerCase();
     const hypothesis = hypothesisLabel.toLowerCase();
     
-    // Look for contradictory terms
-    const contradictoryTerms = ['not', 'no', 'fail', 'contrary', 'against', 'oppose', 'refute', 'disprove', 'invalid'];
-    const supportiveTerms = ['support', 'confirm', 'validate', 'prove', 'demonstrate', 'show', 'evidence', 'consistent'];
+    // Enhanced contradictory terms with weights
+    const strongContradictoryTerms = ['disprove', 'refute', 'contradict', 'falsify', 'invalidate'];
+    const moderateContradictoryTerms = ['not', 'no', 'fail', 'contrary', 'against', 'oppose', 'invalid', 'incorrect', 'wrong'];
+    const weakContradictoryTerms = ['however', 'but', 'although', 'despite'];
+    
+    // Enhanced supportive terms with weights
+    const strongSupportiveTerms = ['prove', 'demonstrate', 'confirm', 'validate', 'establish', 'corroborate'];
+    const moderateSupportiveTerms = ['support', 'show', 'indicate', 'suggest', 'evidence', 'consistent', 'align'];
+    const weakSupportiveTerms = ['may', 'could', 'might', 'possible', 'potential'];
     
     let supportScore = 0;
     let contradictScore = 0;
     
-    // Check for contradictory patterns
-    for (const term of contradictoryTerms) {
+    // Count contradictory patterns with weights
+    strongContradictoryTerms.forEach(term => {
       const regex = new RegExp(`\\b${term}\\b`, 'gi');
       const matches = evidence.match(regex);
-      if (matches) {
-        contradictScore += matches.length;
-      }
-    }
+      if (matches) contradictScore += matches.length * 3; // Strong weight
+    });
     
-    // Check for supportive patterns
-    for (const term of supportiveTerms) {
+    moderateContradictoryTerms.forEach(term => {
       const regex = new RegExp(`\\b${term}\\b`, 'gi');
       const matches = evidence.match(regex);
-      if (matches) {
-        supportScore += matches.length;
-      }
-    }
+      if (matches) contradictScore += matches.length * 2; // Moderate weight
+    });
     
-    // Check semantic similarity (basic keyword overlap)
-    const hypothesisWords = hypothesis.split(/\s+/).filter(word => word.length > 3);
-    const evidenceWords = evidence.split(/\s+/).filter(word => word.length > 3);
+    weakContradictoryTerms.forEach(term => {
+      const regex = new RegExp(`\\b${term}\\b`, 'gi');
+      const matches = evidence.match(regex);
+      if (matches) contradictScore += matches.length * 1; // Weak weight
+    });
+    
+    // Count supportive patterns with weights
+    strongSupportiveTerms.forEach(term => {
+      const regex = new RegExp(`\\b${term}\\b`, 'gi');
+      const matches = evidence.match(regex);
+      if (matches) supportScore += matches.length * 3; // Strong weight
+    });
+    
+    moderateSupportiveTerms.forEach(term => {
+      const regex = new RegExp(`\\b${term}\\b`, 'gi');
+      const matches = evidence.match(regex);
+      if (matches) supportScore += matches.length * 2; // Moderate weight
+    });
+    
+    weakSupportiveTerms.forEach(term => {
+      const regex = new RegExp(`\\b${term}\\b`, 'gi');
+      const matches = evidence.match(regex);
+      if (matches) supportScore += matches.length * 1; // Weak weight
+    });
+    
+    // Check for negation patterns that could flip meaning
+    const negationPatterns = [
+      /\b(not|no|never|neither|nor|none)\s+\w*\s*(support|confirm|validate|prove)/gi,
+      /\b(fail|failed|fails)\s+to\s+(support|confirm|validate|prove)/gi,
+      /\b(does not|doesn't|cannot|can't)\s+\w*\s*(support|confirm|validate|prove)/gi
+    ];
+    
+    negationPatterns.forEach(pattern => {
+      const matches = evidence.match(pattern);
+      if (matches) {
+        // Negated supportive language becomes contradictory
+        contradictScore += matches.length * 2;
+        supportScore = Math.max(0, supportScore - matches.length * 2);
+      }
+    });
+    
+    // Semantic similarity (more sophisticated)
+    const hypothesisWords = hypothesis.split(/\s+/)
+      .filter(word => word.length > 3 && !['that', 'this', 'with', 'from', 'they', 'have', 'been', 'will', 'were', 'would'].includes(word));
+    const evidenceWords = evidence.split(/\s+/)
+      .filter(word => word.length > 3 && !['that', 'this', 'with', 'from', 'they', 'have', 'been', 'will', 'were', 'would'].includes(word));
+    
     const overlap = hypothesisWords.filter(word => evidenceWords.includes(word)).length;
-    const semanticScore = overlap / Math.max(hypothesisWords.length, 1);
+    const semanticScore = hypothesisWords.length > 0 ? (overlap / hypothesisWords.length) * 2 : 0; // Normalize and scale
     
-    // Determine support with confidence
-    const netSupport = supportScore - contradictScore + semanticScore;
-    const supports = netSupport > 0;
-    const confidence = Math.min(0.9, Math.max(0.1, Math.abs(netSupport) / 3));
+    // Calculate net score with semantic context
+    const netScore = supportScore - contradictScore + semanticScore;
+    
+    // Implement threshold-based decision with neutral zone
+    let supports: boolean;
+    let confidence: number;
+    
+    if (netScore > 1.5) {
+      // Clear support
+      supports = true;
+      confidence = Math.min(0.9, 0.5 + (netScore / 10));
+    } else if (netScore < -1.5) {
+      // Clear contradiction
+      supports = false;
+      confidence = Math.min(0.9, 0.5 + (Math.abs(netScore) / 10));
+    } else {
+      // Neutral/ambiguous zone - default to slight support but with low confidence
+      supports = netScore >= 0;
+      confidence = 0.3; // Low confidence for ambiguous cases
+    }
+    
+    // Ensure minimum confidence
+    confidence = Math.max(0.1, confidence);
+    
+    logger.debug(`Evidence analysis for "${evidenceTitle.substring(0, 50)}...": support=${supportScore}, contradict=${contradictScore}, semantic=${semanticScore.toFixed(2)}, net=${netScore.toFixed(2)} → supports=${supports}, confidence=${confidence.toFixed(2)}`);
     
     return { supports, confidence };
   }

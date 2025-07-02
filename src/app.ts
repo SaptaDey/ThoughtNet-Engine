@@ -14,8 +14,6 @@ import { askLLM, LLM_QUERY_LOGS } from './services/llm';
 
 import mcpPublicRoutes from './api/routes/mcpPublicRoutes';
 import mcpAdminRoutes from './api/routes/mcpAdminRoutes';
-import mcpPublicRoutes from './api/routes/mcpPublicRoutes';
-import mcpAdminRoutes from './api/routes/mcpAdminRoutes';
 import debugRoutes from './api/routes/debugRoutes';
 import healthRoutes from './api/routes/healthRoutes';
 import chatRoutes from './api/routes/chatRoutes';

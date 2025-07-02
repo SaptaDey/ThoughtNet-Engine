@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import winston from 'winston';
 import { settings } from '../../config';
 import { GoTProcessorSessionData } from '../models/commonTypes';
-import { Node, NodeMetadata, NodeType, Edge, EdgeMetadata, EdgeType } from '../models/graphElements';
+import { Node, NodeMetadata, NodeType, Edge, EdgeMetadata, EdgeType, createNode } from '../models/graphElements';
 import { ConfidenceVectorSchema, EpistemicStatus } from '../models/common';
 import { BaseStage, StageOutput } from './baseStage';
 import { executeQuery, Neo4jError } from '../../infrastructure/neo4jUtils';
@@ -139,12 +139,14 @@ export class DecompositionStage extends BaseStage {
 
       const dimMetadata: NodeMetadata = {
         description: dimDescription,
+        query_context: currentSessionData.query || '',
         source_description: "DecompositionStage (P1.2)",
         epistemic_status: EpistemicStatus.ASSUMPTION,
         disciplinary_tags: Array.from(initialDisciplinaryTags).join(','),
         layer_id: operationalParams.dimension_layer || rootNodeLayerStr,
         impact_score: 0.7,
-        id: uuidv4(), // Will be overwritten by Node constructor
+        is_knowledge_gap: false,
+        id: uuidv4(),
         doi: '',
         authors: '',
         publication_date: '',
@@ -153,7 +155,7 @@ export class DecompositionStage extends BaseStage {
         updated_at: new Date(),
       };
 
-      const dimensionNode: Node = {
+      const dimensionNode: Node = createNode({
         id: dimIdNeo4j,
         label: dimLabel,
         type: NodeType.DECOMPOSITION_DIMENSION,
@@ -164,10 +166,7 @@ export class DecompositionStage extends BaseStage {
           consensus_alignment: this.dimensionConfidenceValues[3],
         }),
         metadata: dimMetadata,
-        created_at: new Date(),
-        updated_at: new Date(),
-        updateConfidence: () => {}, // Placeholder
-      };
+      });
 
       const nodePropsForNeo4j = prepareNodePropertiesForNeo4j(dimensionNode);
       const typeLabelValue = NodeType.DECOMPOSITION_DIMENSION.valueOf();

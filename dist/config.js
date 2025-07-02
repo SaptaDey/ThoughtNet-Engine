@@ -166,7 +166,12 @@ const SettingsFileSchema = zod_1.z.object({
 });
 const RuntimeSettingsSchema = zod_1.z.object({
     app: AppSettingsSchema.default({}),
-    neo4j: Neo4jSettingsSchema.default({}),
+    neo4j: Neo4jSettingsSchema.default({
+        uri: 'bolt://localhost:7687',
+        user: 'neo4j',
+        password: 'password',
+        database: 'neo4j'
+    }),
     asr_got: ASRGoTDefaultParamsSchema.default({}),
     mcp_settings: MCPSettingsSchema.default({}),
     google_scholar: GoogleScholarConfigSchema.optional(),

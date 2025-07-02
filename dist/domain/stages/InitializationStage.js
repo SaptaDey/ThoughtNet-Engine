@@ -122,6 +122,7 @@ class InitializationStage extends baseStage_1.BaseStage {
                         disciplinary_tags: initialDisciplinaryTagsForContext.join(','), // Storing as comma-separated string
                         layer_id: operationalParams.initial_layer || this.initialLayer,
                         impact_score: 0.9,
+                        is_knowledge_gap: false,
                         id: (0, uuid_1.v4)(), // This will be overwritten by the Node constructor
                         doi: '',
                         authors: '',
@@ -130,7 +131,7 @@ class InitializationStage extends baseStage_1.BaseStage {
                         created_at: new Date(),
                         updated_at: new Date(),
                     };
-                    const rootNode = {
+                    const rootNode = (0, graphElements_1.createNode)({
                         id: newRootNodeIdInternal,
                         label: this.rootNodeLabel,
                         type: graphElements_1.NodeType.ROOT,
@@ -141,10 +142,7 @@ class InitializationStage extends baseStage_1.BaseStage {
                             consensus_alignment: this.initialConfidenceValues[3],
                         }),
                         metadata: rootMetadata,
-                        created_at: new Date(),
-                        updated_at: new Date(),
-                        updateConfidence: () => { }, // Placeholder
-                    };
+                    });
                     const nodePropsForNeo4j = (0, neo4jHelpers_1.prepareNodePropertiesForNeo4j)(rootNode);
                     const typeLabelValue = graphElements_1.NodeType.ROOT.valueOf();
                     const createQuery = `

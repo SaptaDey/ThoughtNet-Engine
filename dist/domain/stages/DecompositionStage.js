@@ -111,12 +111,14 @@ class DecompositionStage extends baseStage_1.BaseStage {
                 const dimIdNeo4j = `dim_${rootNodeId}_${i}_${(0, uuid_1.v4)()}`; // Ensure unique ID
                 const dimMetadata = {
                     description: dimDescription,
+                    query_context: currentSessionData.query || '',
                     source_description: "DecompositionStage (P1.2)",
                     epistemic_status: common_1.EpistemicStatus.ASSUMPTION,
                     disciplinary_tags: Array.from(initialDisciplinaryTags).join(','),
                     layer_id: operationalParams.dimension_layer || rootNodeLayerStr,
                     impact_score: 0.7,
-                    id: (0, uuid_1.v4)(), // Will be overwritten by Node constructor
+                    is_knowledge_gap: false,
+                    id: (0, uuid_1.v4)(),
                     doi: '',
                     authors: '',
                     publication_date: '',
@@ -124,7 +126,7 @@ class DecompositionStage extends baseStage_1.BaseStage {
                     created_at: new Date(),
                     updated_at: new Date(),
                 };
-                const dimensionNode = {
+                const dimensionNode = (0, graphElements_1.createNode)({
                     id: dimIdNeo4j,
                     label: dimLabel,
                     type: graphElements_1.NodeType.DECOMPOSITION_DIMENSION,
@@ -135,10 +137,7 @@ class DecompositionStage extends baseStage_1.BaseStage {
                         consensus_alignment: this.dimensionConfidenceValues[3],
                     }),
                     metadata: dimMetadata,
-                    created_at: new Date(),
-                    updated_at: new Date(),
-                    updateConfidence: () => { }, // Placeholder
-                };
+                });
                 const nodePropsForNeo4j = (0, neo4jHelpers_1.prepareNodePropertiesForNeo4j)(dimensionNode);
                 const typeLabelValue = graphElements_1.NodeType.DECOMPOSITION_DIMENSION.valueOf();
                 batchDimensionNodeData.push({

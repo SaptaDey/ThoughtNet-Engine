@@ -252,7 +252,7 @@ class ReflectionStage extends baseStage_1.BaseStage {
                     });
                 }
                 const totalHypotheses = results.length;
-                const falsifiableCount = results.filter(r => r.has_criteria).length;
+                const falsifiableCount = results.filter((r) => r.has_criteria).length;
                 const ratio = totalHypotheses > 0 ? falsifiableCount / totalHypotheses : 0;
                 const message = `${falsifiableCount}/${totalHypotheses} (${ratio.toFixed(2)}%) hypotheses have falsifiability criteria.`;
                 let status = "FAIL";

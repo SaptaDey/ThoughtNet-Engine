@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import winston from 'winston';
 import { settings } from '../../config';
 import { GoTProcessorSessionData } from '../models/commonTypes';
-import { Node, NodeMetadata, NodeType } from '../models/graphElements';
+import { Node, NodeMetadata, NodeType, createNode } from '../models/graphElements';
 import { ConfidenceVectorSchema, EpistemicStatus } from '../models/common';
 import { BaseStage, StageOutput } from './baseStage';
 import { executeQuery, Neo4jError } from '../../infrastructure/neo4jUtils';
@@ -110,14 +110,14 @@ export class InitializationStage extends BaseStage {
           if (updatedTagsResult && updatedTagsResult.length > 0 && updatedTagsResult[0].updated_tags) {
             logger.info(`Updated disciplinary tags for ROOT node '${rootNodeIdForContext}' to: ${updatedTagsResult[0].updated_tags}`);
             updatedExistingNodeTags = true;
-            initialDisciplinaryTagsForContext = Array.from(combinedTags);
+            initialDisciplinaryTagsForContext = Array.from(combinedTags) as string[];
           } else {
             logger.warn(`Failed to update tags for ROOT node '${rootNodeIdForContext}'. Using existing tags.`);
-            initialDisciplinaryTagsForContext = Array.from(currentTagsFromDb);
+            initialDisciplinaryTagsForContext = Array.from(currentTagsFromDb) as string[];
           }
         } else {
           logger.info(`No change in disciplinary tags for existing ROOT node '${rootNodeIdForContext}'.`);
-          initialDisciplinaryTagsForContext = Array.from(currentTagsFromDb);
+          initialDisciplinaryTagsForContext = Array.from(currentTagsFromDb) as string[];
         }
 
         finalSummaryMessage = `Using existing ROOT node '${rootNodeIdForContext}' from Neo4j. Disciplinary tags ensured.`;
@@ -130,7 +130,7 @@ export class InitializationStage extends BaseStage {
           operationalParams.initial_disciplinary_tags ||
           (this.settings.asr_got.default_parameters?.default_disciplinary_tags || [])
         );
-        initialDisciplinaryTagsForContext = Array.from(defaultDisciplines);
+        initialDisciplinaryTagsForContext = Array.from(defaultDisciplines) as string[];
 
         const rootMetadata: NodeMetadata = {
           description: `Initial understanding of the task based on the query: '${initialQuery}'.`,
@@ -140,6 +140,7 @@ export class InitializationStage extends BaseStage {
           disciplinary_tags: initialDisciplinaryTagsForContext.join(','), // Storing as comma-separated string
           layer_id: operationalParams.initial_layer || this.initialLayer,
           impact_score: 0.9,
+          is_knowledge_gap: false,
           id: uuidv4(), // This will be overwritten by the Node constructor
           doi: '',
           authors: '',
@@ -149,7 +150,7 @@ export class InitializationStage extends BaseStage {
           updated_at: new Date(),
         };
 
-        const rootNode: Node = {
+        const rootNode: Node = createNode({
           id: newRootNodeIdInternal,
           label: this.rootNodeLabel,
           type: NodeType.ROOT,
@@ -160,10 +161,7 @@ export class InitializationStage extends BaseStage {
             consensus_alignment: this.initialConfidenceValues[3],
           }),
           metadata: rootMetadata,
-          created_at: new Date(),
-          updated_at: new Date(),
-          updateConfidence: () => {}, // Placeholder
-        };
+        });
 
         const nodePropsForNeo4j = prepareNodePropertiesForNeo4j(rootNode);
         const typeLabelValue = NodeType.ROOT.valueOf();
