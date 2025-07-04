@@ -31,12 +31,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/ThoughtNet-Engine.git"
+    "url": "https://github.com/SaptaDey/ThoughtNet-Engine.git"
   },
   "bugs": {
-    "url": "https://github.com/your-username/ThoughtNet-Engine/issues"
+    "url": "https://github.com/SaptaDey/ThoughtNet-Engine/issues"
   },
-  "homepage": "https://github.com/your-username/ThoughtNet-Engine#readme",
+  "homepage": "https://github.com/SaptaDey/ThoughtNet-Engine#readme",
   "type": "commonjs",
   "dependencies": {
     "@types/express": "^5.0.3",

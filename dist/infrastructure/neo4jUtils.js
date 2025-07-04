@@ -13,6 +13,8 @@ exports.Neo4jError = void 0;
 exports.initializeNeo4jManager = initializeNeo4jManager;
 exports.executeQuery = executeQuery;
 exports.executeInTransaction = executeInTransaction;
+exports.closeNeo4jConnection = closeNeo4jConnection;
+exports.healthCheckNeo4j = healthCheckNeo4j;
 exports.executeBatchInTransaction = executeBatchInTransaction;
 const neo4j_driver_1 = require("neo4j-driver");
 const neo4jDatabaseManager_1 = require("../infrastructure/neo4jDatabaseManager");
@@ -27,19 +29,50 @@ class Neo4jError extends Error {
     }
 }
 exports.Neo4jError = Neo4jError;
-let neo4jManager = null;
-function initializeNeo4jManager() {
-    if (!neo4jManager) {
-        neo4jManager = new neo4jDatabaseManager_1.Neo4jDatabaseManager();
+// Dependency injection pattern instead of singleton
+class Neo4jService {
+    constructor() {
+        this.manager = null;
+        this.isInitialized = false;
     }
+    static getInstance() {
+        if (!Neo4jService.instance) {
+            Neo4jService.instance = new Neo4jService();
+        }
+        return Neo4jService.instance;
+    }
+    initialize() {
+        if (!this.isInitialized) {
+            this.manager = new neo4jDatabaseManager_1.Neo4jDatabaseManager();
+            this.isInitialized = true;
+        }
+    }
+    getManager() {
+        if (!this.isInitialized || !this.manager) {
+            throw new Neo4jError("Neo4jService not initialized. Call initialize() first.");
+        }
+        return this.manager;
+    }
+    dispose() {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this.manager) {
+                yield this.manager.closeConnection();
+                this.manager = null;
+                this.isInitialized = false;
+            }
+        });
+    }
+}
+Neo4jService.instance = null;
+const neo4jService = Neo4jService.getInstance();
+function initializeNeo4jManager() {
+    neo4jService.initialize();
 }
 function executeQuery(query_1, parameters_1) {
     return __awaiter(this, arguments, void 0, function* (query, parameters, txType = "read") {
-        if (!neo4jManager) {
-            throw new Neo4jError("Neo4jDatabaseManager not initialized. Call initializeNeo4jManager() first.");
-        }
+        const manager = neo4jService.getManager();
         try {
-            return yield neo4jManager.executeQuery(query, parameters, undefined, txType);
+            return yield manager.executeQuery(query, parameters, undefined, txType);
         }
         catch (error) {
             if (error instanceof neo4j_driver_1.Neo4jError) {
@@ -53,19 +86,28 @@ function executeQuery(query_1, parameters_1) {
 }
 function executeInTransaction(operations_1) {
     return __awaiter(this, arguments, void 0, function* (operations, txType = "write") {
-        if (!neo4jManager) {
-            throw new Neo4jError("Neo4jDatabaseManager not initialized. Call initializeNeo4jManager() first.");
-        }
+        const manager = neo4jService.getManager();
         try {
-            return yield neo4jManager.executeInTransaction(operations, txType);
+            return yield manager.executeInTransaction(operations, txType);
         }
         catch (error) {
-            if (error instanceof neo4j_driver_1.Neo4jError) {
-                throw new Neo4jError(`Neo4j transaction error: ${error.message}`, error);
-            }
-            else {
-                throw new Neo4jError(`Error executing Neo4j transaction: ${error.message}`, error);
-            }
+            throw new Neo4jError(`Transaction execution failed: ${error.message}`, error);
+        }
+    });
+}
+function closeNeo4jConnection() {
+    return __awaiter(this, void 0, void 0, function* () {
+        yield neo4jService.dispose();
+    });
+}
+function healthCheckNeo4j() {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const manager = neo4jService.getManager();
+            return yield manager.healthCheck();
+        }
+        catch (error) {
+            return false;
         }
     });
 }
