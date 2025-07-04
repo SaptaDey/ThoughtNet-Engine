@@ -43,6 +43,7 @@ const helmet_1 = __importDefault(require("helmet"));
 const config_1 = require("./config");
 const rateLimiter_1 = require("./services/rateLimiter");
 const security_1 = require("./middleware/security");
+const errorHandler_1 = require("./middleware/errorHandler");
 const winston_1 = __importDefault(require("winston"));
 const mcpPublicRoutes_1 = __importDefault(require("./api/routes/mcpPublicRoutes"));
 const mcpAdminRoutes_1 = __importDefault(require("./api/routes/mcpAdminRoutes"));
@@ -83,9 +84,29 @@ const createApp = () => {
     }));
     // Session validation middleware
     app.use((0, security_1.createSessionValidator)());
-    // Body parsing middleware with limits
-    app.use(express_1.default.json({ limit: '10mb' }));
-    app.use(express_1.default.urlencoded({ extended: true, limit: '10mb' }));
+    // Body parsing middleware with limits and validation
+    app.use(express_1.default.json({
+        limit: '10mb',
+        verify: (req, res, buf) => {
+            // Validate JSON structure
+            try {
+                JSON.parse(buf.toString());
+            }
+            catch (e) {
+                throw new Error('Invalid JSON');
+            }
+        }
+    }));
+    app.use(express_1.default.urlencoded({
+        extended: true,
+        limit: '10mb'
+    }));
+    // Add request correlation ID
+    app.use((req, res, next) => {
+        req.correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        res.setHeader('X-Correlation-ID', req.correlationId);
+        next();
+    });
     // CORS configuration with security headers
     const allowedOriginsStr = config_1.settings.app.cors_allowed_origins_str;
     let allowedOrigins;
@@ -143,6 +164,10 @@ const createApp = () => {
     adminMcpRouter.use(strictRateLimit);
     adminMcpRouter.use(mcpAdminRoutes_1.default);
     app.use('/admin/mcp', adminMcpRouter);
+    // 404 handler for unmatched routes
+    app.use(errorHandler_1.notFoundHandler);
+    // Global error handler (must be last)
+    app.use(errorHandler_1.errorHandler);
     logger.info(`${config_1.settings.app.name} v${config_1.settings.app.version} application instance created.`);
     return app;
 };

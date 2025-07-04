@@ -65,22 +65,66 @@ function validateEnvironmentVariables() {
     const missingOptional = optionalVars.filter(varName => !process.env[varName]);
     if (missingRequired.length > 0) {
         console.error(`CRITICAL: Missing required environment variables: ${missingRequired.join(', ')}`);
+        // In production, always exit on missing required variables
         if (process.env.NODE_ENV === 'production') {
             throw new Error(`Missing required environment variables: ${missingRequired.join(', ')}`);
         }
         else {
-            console.warn('Development mode: Using default values for missing required variables.');
+            // In development, warn but allow to continue only if explicit override is set
+            if (!process.env.ALLOW_MISSING_ENV_VARS) {
+                throw new Error(`Missing required environment variables. Set ALLOW_MISSING_ENV_VARS=true to override in development.`);
+            }
+            console.warn('⚠️  Development mode: Using default values for missing required variables. This is NOT safe for production!');
         }
     }
     if (missingOptional.length > 0) {
         console.warn(`Optional environment variables not set (using defaults): ${missingOptional.join(', ')}`);
     }
-    // Validate specific environment variable formats
+    // Enhanced validation for specific environment variables
     if (process.env.NEO4J_URI && !process.env.NEO4J_URI.startsWith('neo4j://') && !process.env.NEO4J_URI.startsWith('bolt://')) {
-        console.warn('NEO4J_URI should start with neo4j:// or bolt://');
+        const errorMsg = 'NEO4J_URI must start with neo4j:// or bolt://';
+        if (process.env.NODE_ENV === 'production') {
+            throw new Error(errorMsg);
+        }
+        else {
+            console.warn(`⚠️  ${errorMsg}`);
+        }
     }
-    if (process.env.APP_PORT && (isNaN(Number(process.env.APP_PORT)) || Number(process.env.APP_PORT) < 1 || Number(process.env.APP_PORT) > 65535)) {
-        console.warn('APP_PORT should be a valid port number (1-65535)');
+    if (process.env.APP_PORT) {
+        const port = Number(process.env.APP_PORT);
+        if (isNaN(port) || port < 1 || port > 65535) {
+            const errorMsg = 'APP_PORT must be a valid port number (1-65535)';
+            if (process.env.NODE_ENV === 'production') {
+                throw new Error(errorMsg);
+            }
+            else {
+                console.warn(`⚠️  ${errorMsg}`);
+            }
+        }
+    }
+    // Validate Neo4j password strength
+    if (process.env.NEO4J_PASSWORD) {
+        const password = process.env.NEO4J_PASSWORD;
+        if (password.length < 8) {
+            const errorMsg = 'NEO4J_PASSWORD must be at least 8 characters long';
+            if (process.env.NODE_ENV === 'production') {
+                throw new Error(errorMsg);
+            }
+            else {
+                console.warn(`⚠️  ${errorMsg}`);
+            }
+        }
+        // Check for default/weak passwords
+        const weakPasswords = ['password', 'neo4j', 'admin', '123456', 'test'];
+        if (weakPasswords.includes(password.toLowerCase())) {
+            const errorMsg = 'NEO4J_PASSWORD appears to be a default or weak password';
+            if (process.env.NODE_ENV === 'production') {
+                throw new Error(errorMsg);
+            }
+            else {
+                console.warn(`⚠️  ${errorMsg}`);
+            }
+        }
     }
 }
 validateEnvironmentVariables();

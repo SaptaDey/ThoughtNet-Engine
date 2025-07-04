@@ -3,9 +3,9 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { settings } from './config';
 import { authenticateBasic } from './middleware/auth';
-import catchAsync from './utils/catchAsync';
 import { createAuthRateLimit, createApiRateLimit, createStrictRateLimit } from './services/rateLimiter';
 import { createSecurityMiddleware, createSessionValidator } from './middleware/security';
+import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 
 import neo4j, { auth, Driver } from 'neo4j-driver';
 import winston from 'winston';
@@ -63,9 +63,30 @@ export const createApp = () => {
   // Session validation middleware
   app.use(createSessionValidator() as RequestHandler);
 
-  // Body parsing middleware with limits
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+  // Body parsing middleware with limits and validation
+  app.use(express.json({ 
+    limit: '10mb',
+    verify: (req, res, buf) => {
+      // Validate JSON structure
+      try {
+        JSON.parse(buf.toString());
+      } catch (e) {
+        throw new Error('Invalid JSON');
+      }
+    }
+  }));
+  
+  app.use(express.urlencoded({ 
+    extended: true, 
+    limit: '10mb' 
+  }));
+
+  // Add request correlation ID
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    (req as any).correlationId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    res.setHeader('X-Correlation-ID', (req as any).correlationId);
+    next();
+  });
 
   // CORS configuration with security headers
   const allowedOriginsStr = settings.app.cors_allowed_origins_str;
@@ -132,6 +153,12 @@ export const createApp = () => {
   adminMcpRouter.use(strictRateLimit as RequestHandler);
   adminMcpRouter.use(mcpAdminRoutes as RequestHandler);
   app.use('/admin/mcp', adminMcpRouter);
+
+  // 404 handler for unmatched routes
+  app.use(notFoundHandler);
+
+  // Global error handler (must be last)
+  app.use(errorHandler);
 
   logger.info(`${settings.app.name} v${settings.app.version} application instance created.`);
 

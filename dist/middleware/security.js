@@ -31,55 +31,97 @@ const createSessionValidator = () => {
     const activeSessions = new Map();
     const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
     const MAX_SESSIONS_PER_IP = 5;
+    const sessionMutex = new Map(); // Simple mutex to prevent race conditions
     // Clean up expired sessions every 10 minutes
-    setInterval(() => {
+    const cleanup = setInterval(() => {
         const now = Date.now();
         for (const [sessionId, session] of activeSessions.entries()) {
             if (now - session.lastActivity > SESSION_TIMEOUT) {
                 activeSessions.delete(sessionId);
+                sessionMutex.delete(sessionId);
             }
         }
     }, 10 * 60 * 1000);
+    // Cleanup on process exit
+    process.on('SIGTERM', () => clearInterval(cleanup));
+    process.on('SIGINT', () => clearInterval(cleanup));
     return (req, res, next) => {
-        const sessionId = req.get('Authorization') || 'anonymous';
-        const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
-        const userAgent = req.get('User-Agent') || 'unknown';
+        var _a;
+        const sessionId = req.headers['x-session-id'];
+        const ipAddress = ((_a = req.headers['x-forwarded-for']) === null || _a === void 0 ? void 0 : _a.split(',')[0]) || req.socket.remoteAddress || 'unknown';
+        const userAgent = req.headers['user-agent'] || 'unknown';
         const now = Date.now();
-        // Check for session hijacking attempts
-        if (activeSessions.has(sessionId)) {
-            const existingSession = activeSessions.get(sessionId);
-            // Validate IP consistency (allow for some flexibility with proxies)
-            if (existingSession.ipAddress !== ipAddress &&
-                !ipAddress.startsWith('10.') &&
-                !ipAddress.startsWith('192.168.') &&
-                !ipAddress.startsWith('172.')) {
-                console.warn(`Potential session hijacking detected: Session ${sessionId.substring(0, 10)}... used from different IP`);
-            }
-            // Update last activity
-            existingSession.lastActivity = now;
+        // Validate session format
+        if (sessionId && !/^[a-zA-Z0-9-_]{16,128}$/.test(sessionId)) {
+            res.status(400).json({
+                success: false,
+                message: 'Invalid session ID format'
+            });
+            return;
         }
-        else {
-            // Check rate limiting per IP
-            const sessionsFromIP = Array.from(activeSessions.values())
-                .filter(session => session.ipAddress === ipAddress).length;
-            if (sessionsFromIP >= MAX_SESSIONS_PER_IP) {
+        if (sessionId) {
+            // Check for race condition
+            if (sessionMutex.get(sessionId)) {
                 res.status(429).json({
                     success: false,
-                    message: 'Too many active sessions from this IP address'
+                    message: 'Session update in progress, please retry'
                 });
                 return;
             }
-            // Create new session
-            activeSessions.set(sessionId, {
-                lastActivity: now,
-                ipAddress,
-                userAgent
-            });
+            const session = activeSessions.get(sessionId);
+            if (session) {
+                // Validate session integrity
+                if (session.ipAddress !== ipAddress || session.userAgent !== userAgent) {
+                    activeSessions.delete(sessionId);
+                    sessionMutex.delete(sessionId);
+                    res.status(401).json({
+                        success: false,
+                        message: 'Session validation failed'
+                    });
+                    return;
+                }
+                // Check timeout
+                if (now - session.lastActivity > SESSION_TIMEOUT) {
+                    activeSessions.delete(sessionId);
+                    sessionMutex.delete(sessionId);
+                    res.status(401).json({
+                        success: false,
+                        message: 'Session expired'
+                    });
+                    return;
+                }
+                // Update session activity with mutex protection
+                sessionMutex.set(sessionId, true);
+                session.lastActivity = now;
+                sessionMutex.delete(sessionId);
+            }
+            else {
+                // New session - check IP limits
+                const sessionsForIP = Array.from(activeSessions.values())
+                    .filter(s => s.ipAddress === ipAddress).length;
+                if (sessionsForIP >= MAX_SESSIONS_PER_IP) {
+                    res.status(429).json({
+                        success: false,
+                        message: 'Too many active sessions for this IP'
+                    });
+                    return;
+                }
+                // Create new session
+                activeSessions.set(sessionId, {
+                    lastActivity: now,
+                    ipAddress,
+                    userAgent
+                });
+            }
         }
-        // Add session info to response headers (for monitoring)
-        res.setHeader('X-Session-Timeout', Math.floor(SESSION_TIMEOUT / 1000));
+        // Add session info to request
+        req.sessionInfo = {
+            sessionId,
+            isNewSession: sessionId ? !activeSessions.has(sessionId) : true,
+            ipAddress,
+            userAgent
+        };
         next();
     };
 };
 exports.createSessionValidator = createSessionValidator;
-exports.default = exports.createSecurityMiddleware;

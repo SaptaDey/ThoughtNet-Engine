@@ -16,12 +16,40 @@ class MCPTester {
   async startServer() {
     console.log('🚀 Starting MCP Server...');
     
-    this.serverProcess = spawn('node', ['server/index.js'], {
+    // Try to find the correct server entry point
+    const possibleServerPaths = [
+      'dist/main.js',
+      'src/main.ts', 
+      'dist/index.js',
+      'server/index.js'
+    ];
+    
+    let serverPath = null;
+    const fs = require('fs');
+    
+    for (const path of possibleServerPaths) {
+      if (fs.existsSync(path)) {
+        serverPath = path;
+        break;
+      }
+    }
+    
+    if (!serverPath) {
+      throw new Error('Could not find server entry point. Available paths: ' + possibleServerPaths.join(', '));
+    }
+    
+    console.log(`Starting server with path: ${serverPath}`);
+    
+    this.serverProcess = spawn('node', [serverPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
-        NEO4J_PASSWORD: 'test_password',
-        LOG_LEVEL: 'ERROR'
+        NEO4J_PASSWORD: 'test_password_123!',
+        NEO4J_URI: 'bolt://localhost:7687',
+        NEO4J_USER: 'neo4j',
+        LOG_LEVEL: 'ERROR',
+        NODE_ENV: 'test',
+        ALLOW_MISSING_ENV_VARS: 'true'
       }
     });
 

@@ -12,12 +12,48 @@ export class Neo4jError extends Error {
   }
 }
 
-let neo4jManager: Neo4jDatabaseManager | null = null;
+// Dependency injection pattern instead of singleton
+class Neo4jService {
+  private static instance: Neo4jService | null = null;
+  private manager: Neo4jDatabaseManager | null = null;
+  private isInitialized = false;
 
-export function initializeNeo4jManager() {
-  if (!neo4jManager) {
-    neo4jManager = new Neo4jDatabaseManager();
+  private constructor() {}
+
+  static getInstance(): Neo4jService {
+    if (!Neo4jService.instance) {
+      Neo4jService.instance = new Neo4jService();
+    }
+    return Neo4jService.instance;
   }
+
+  initialize(): void {
+    if (!this.isInitialized) {
+      this.manager = new Neo4jDatabaseManager();
+      this.isInitialized = true;
+    }
+  }
+
+  getManager(): Neo4jDatabaseManager {
+    if (!this.isInitialized || !this.manager) {
+      throw new Neo4jError("Neo4jService not initialized. Call initialize() first.");
+    }
+    return this.manager;
+  }
+
+  async dispose(): Promise<void> {
+    if (this.manager) {
+      await this.manager.closeConnection();
+      this.manager = null;
+      this.isInitialized = false;
+    }
+  }
+}
+
+const neo4jService = Neo4jService.getInstance();
+
+export function initializeNeo4jManager(): void {
+  neo4jService.initialize();
 }
 
 export async function executeQuery(
@@ -25,11 +61,9 @@ export async function executeQuery(
   parameters?: Record<string, any>,
   txType: "read" | "write" = "read"
 ): Promise<any> {
-  if (!neo4jManager) {
-    throw new Neo4jError("Neo4jDatabaseManager not initialized. Call initializeNeo4jManager() first.");
-  }
+  const manager = neo4jService.getManager();
   try {
-    return await neo4jManager.executeQuery(query, parameters, undefined, txType);
+    return await manager.executeQuery(query, parameters, undefined, txType);
   } catch (error: any) {
     if (error instanceof Neo4jDriverError) {
       throw new Neo4jError(`Neo4j driver error: ${error.message}`, error);
@@ -43,18 +77,25 @@ export async function executeInTransaction<T>(
   operations: (transaction: any) => Promise<T>,
   txType: "read" | "write" = "write"
 ): Promise<T> {
-  if (!neo4jManager) {
-    throw new Neo4jError("Neo4jDatabaseManager not initialized. Call initializeNeo4jManager() first.");
-  }
+  const manager = neo4jService.getManager();
   
   try {
-    return await neo4jManager.executeInTransaction(operations, txType);
+    return await manager.executeInTransaction(operations, txType);
   } catch (error: any) {
-    if (error instanceof Neo4jDriverError) {
-      throw new Neo4jError(`Neo4j transaction error: ${error.message}`, error);
-    } else {
-      throw new Neo4jError(`Error executing Neo4j transaction: ${error.message}`, error);
-    }
+    throw new Neo4jError(`Transaction execution failed: ${error.message}`, error);
+  }
+}
+
+export async function closeNeo4jConnection(): Promise<void> {
+  await neo4jService.dispose();
+}
+
+export async function healthCheckNeo4j(): Promise<boolean> {
+  try {
+    const manager = neo4jService.getManager();
+    return await manager.healthCheck();
+  } catch (error) {
+    return false;
   }
 }
 
