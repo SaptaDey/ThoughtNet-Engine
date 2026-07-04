@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/saptadey-thoughtnet-engine-badge.png)](https://mseep.ai/app/saptadey-thoughtnet-engine)
+
 <div align="center">
 
 # 🧠⚡ ThoughtNet-Engine
